@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+
+find . -name gradle.lockfile -delete
+./gradlew resolveAndLockAll --write-locks --dependency-verification=off --project-dir buildSrc --refresh-dependencies --no-configuration-cache
+./gradlew resolveAndLockAll --write-locks --dependency-verification=off --refresh-dependencies --no-configuration-cache

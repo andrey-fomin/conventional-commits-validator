@@ -1,0 +1,14 @@
+message:
+  max-line-length: 72
+
+type:
+  values:
+    - build
+    - ci
+    - docs
+    - feat
+    - fix
+    - perf
+    - refactor
+    - style
+    - test
