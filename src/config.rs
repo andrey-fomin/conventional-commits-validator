@@ -1,0 +1,402 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum ConfigError {
+    #[error("unknown preset '{0}'")]
+    UnknownPreset(String),
+    #[error("failed to read config '{path}': {error}")]
+    ReadFailed { path: String, error: std::io::Error },
+    #[error("{0}")]
+    InvalidYaml(#[from] serde_yaml::Error),
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Config {
+    pub preset: Option<String>,
+    pub message: Option<FieldRules>,
+    pub header: Option<FieldRules>,
+    #[serde(rename = "type")]
+    pub commit_type: Option<FieldRules>,
+    pub scope: Option<FieldRules>,
+    pub description: Option<FieldRules>,
+    pub body: Option<FieldRules>,
+    pub footer_token: Option<FieldRules>,
+    pub footer_value: Option<FieldRules>,
+    pub footers: Option<HashMap<String, FieldRules>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FieldRules {
+    pub max_length: Option<usize>,
+    pub max_line_length: Option<usize>,
+    pub required: Option<bool>,
+    pub forbidden: Option<bool>,
+    #[serde(with = "regexes_serde", default)]
+    pub regexes: Option<Vec<regex::Regex>>,
+    pub values: Option<Vec<String>>,
+}
+
+mod regexes_serde {
+    use regex::Regex;
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(regexes: &Option<Vec<Regex>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match regexes {
+            Some(regexes) => serializer.collect_seq(regexes.iter().map(|regex| regex.as_str())),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<Regex>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt = Option::<Vec<String>>::deserialize(deserializer)?;
+        match opt {
+            Some(regexes) => {
+                let mut compiled = Vec::with_capacity(regexes.len());
+                for pattern in regexes {
+                    match Regex::new(&pattern) {
+                        Ok(regex) => compiled.push(regex),
+                        Err(err) => {
+                            return Err(serde::de::Error::custom(format!(
+                                "invalid regex '{}': {}",
+                                pattern, err
+                            )));
+                        }
+                    }
+                }
+                Ok(Some(compiled))
+            }
+            None => Ok(None),
+        }
+    }
+}
+
+impl FieldRules {
+    pub fn merge(base: Option<&FieldRules>, overrides: Option<&FieldRules>) -> Option<FieldRules> {
+        match (base, overrides) {
+            (None, None) => None,
+            (Some(b), None) => Some(b.clone()),
+            (None, Some(o)) => Some(o.clone()),
+            (Some(b), Some(o)) => Some(FieldRules {
+                max_length: o.max_length.or(b.max_length),
+                max_line_length: o.max_line_length.or(b.max_line_length),
+                required: o.required.or(b.required),
+                forbidden: o.forbidden.or(b.forbidden),
+                regexes: o.regexes.clone().or_else(|| b.regexes.clone()),
+                values: o.values.clone().or_else(|| b.values.clone()),
+            }),
+        }
+    }
+}
+
+impl Config {
+    fn empty() -> Config {
+        Config {
+            preset: None,
+            message: None,
+            header: None,
+            commit_type: None,
+            scope: None,
+            description: None,
+            body: None,
+            footer_token: None,
+            footer_value: None,
+            footers: None,
+        }
+    }
+
+    pub fn merge(base: &Config, overrides: &Config) -> Config {
+        let mut footers = HashMap::new();
+        if let Some(b_footers) = &base.footers {
+            for (k, v) in b_footers {
+                footers.insert(k.clone(), v.clone());
+            }
+        }
+        if let Some(o_footers) = &overrides.footers {
+            for (k, v) in o_footers {
+                let merged = FieldRules::merge(footers.get(k), Some(v)).unwrap();
+                footers.insert(k.clone(), merged);
+            }
+        }
+
+        Config {
+            preset: overrides.preset.clone().or_else(|| base.preset.clone()),
+            message: FieldRules::merge(base.message.as_ref(), overrides.message.as_ref()),
+            header: FieldRules::merge(base.header.as_ref(), overrides.header.as_ref()),
+            commit_type: FieldRules::merge(
+                base.commit_type.as_ref(),
+                overrides.commit_type.as_ref(),
+            ),
+            scope: FieldRules::merge(base.scope.as_ref(), overrides.scope.as_ref()),
+            description: FieldRules::merge(
+                base.description.as_ref(),
+                overrides.description.as_ref(),
+            ),
+            body: FieldRules::merge(base.body.as_ref(), overrides.body.as_ref()),
+            footer_token: FieldRules::merge(
+                base.footer_token.as_ref(),
+                overrides.footer_token.as_ref(),
+            ),
+            footer_value: FieldRules::merge(
+                base.footer_value.as_ref(),
+                overrides.footer_value.as_ref(),
+            ),
+            footers: if footers.is_empty() {
+                None
+            } else {
+                Some(footers)
+            },
+        }
+    }
+
+    pub fn load_preset(preset: &str) -> Result<Config, ConfigError> {
+        let preset_yaml = match preset {
+            "default" => include_str!("default.yaml"),
+            "strict" => include_str!("strict.yaml"),
+            _ => return Err(ConfigError::UnknownPreset(preset.to_string())),
+        };
+
+        Ok(serde_yaml::from_str(preset_yaml)?)
+    }
+
+    pub fn load_from_str(local_config_str: &str) -> Result<Config, ConfigError> {
+        let local_config: Config = serde_yaml::from_str(local_config_str)?;
+        match local_config.preset.as_deref() {
+            Some("default") => {
+                let default_config = Self::load_preset("default")?;
+                Ok(Config::merge(&default_config, &local_config))
+            }
+            Some("strict") => {
+                let strict_config = Self::load_preset("strict")?;
+                Ok(Config::merge(&strict_config, &local_config))
+            }
+            Some(other) => Err(ConfigError::UnknownPreset(other.to_string())),
+            None => Ok(Config::merge(&Self::empty(), &local_config)),
+        }
+    }
+
+    pub fn load() -> Result<Config, ConfigError> {
+        Self::load_default_path_if_exists("conventional-commits.yaml")
+    }
+
+    pub fn load_default_path_if_exists(path: &str) -> Result<Config, ConfigError> {
+        if !Path::new(path).exists() {
+            return Ok(Self::empty());
+        }
+
+        let local_config_str =
+            std::fs::read_to_string(path).map_err(|error| ConfigError::ReadFailed {
+                path: path.to_string(),
+                error,
+            })?;
+        Self::load_from_str(&local_config_str)
+    }
+
+    pub fn load_from_path(path: &str) -> Result<Config, ConfigError> {
+        let local_config_str =
+            std::fs::read_to_string(path).map_err(|error| ConfigError::ReadFailed {
+                path: path.to_string(),
+                error,
+            })?;
+        Self::load_from_str(&local_config_str)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_default() {
+        let config = Config::load_preset("default").unwrap();
+        assert!(config.body.is_some());
+        assert!(config.footer_value.is_some());
+    }
+
+    #[test]
+    fn test_default_preset_smoke() {
+        Config::load_preset("default").unwrap();
+    }
+
+    #[test]
+    fn test_load_strict_preset() {
+        let config = Config::load_preset("strict").unwrap();
+        assert_eq!(config.message.as_ref().unwrap().max_line_length, Some(72));
+        assert_eq!(config.header.as_ref().unwrap().max_length, Some(51));
+        assert_eq!(config.body.as_ref().unwrap().max_line_length, Some(72));
+        assert!(config.scope.as_ref().unwrap().regexes.is_some());
+        assert!(
+            config
+                .commit_type
+                .as_ref()
+                .unwrap()
+                .values
+                .as_ref()
+                .unwrap()
+                .contains(&"feat".to_string())
+        );
+        assert!(config.body.as_ref().unwrap().regexes.is_some());
+        assert!(config.footer_value.as_ref().unwrap().regexes.is_some());
+    }
+
+    #[test]
+    fn test_strict_preset_smoke() {
+        Config::load_preset("strict").unwrap();
+    }
+
+    #[test]
+    fn test_load_from_str_without_preset_does_not_apply_defaults() {
+        let custom_yaml = "
+message:
+  max-length: 1000
+";
+        let config = Config::load_from_str(custom_yaml).unwrap();
+
+        assert_eq!(config.message.as_ref().unwrap().max_length, Some(1000));
+        assert_eq!(config.message.as_ref().unwrap().max_line_length, None);
+        assert!(config.commit_type.is_none());
+    }
+
+    #[test]
+    fn test_load_from_str_with_default_preset_applies_defaults() {
+        let custom_yaml = "
+preset: default
+message:
+  max-length: 1000
+";
+        let config = Config::load_from_str(custom_yaml).unwrap();
+
+        assert_eq!(config.message.as_ref().unwrap().max_length, Some(1000));
+        assert!(config.body.as_ref().unwrap().regexes.is_some());
+        assert!(config.footer_value.as_ref().unwrap().regexes.is_some());
+        assert!(config.commit_type.is_none());
+    }
+
+    #[test]
+    fn test_load_from_str_with_strict_preset_applies_strict_rules() {
+        let custom_yaml = "
+preset: strict
+";
+        let config = Config::load_from_str(custom_yaml).unwrap();
+
+        assert_eq!(config.message.as_ref().unwrap().max_line_length, Some(72));
+        assert_eq!(config.header.as_ref().unwrap().max_length, Some(51));
+        assert_eq!(config.body.as_ref().unwrap().max_line_length, Some(72));
+        assert!(config.scope.as_ref().unwrap().regexes.is_some());
+        assert!(
+            config
+                .commit_type
+                .as_ref()
+                .unwrap()
+                .values
+                .as_ref()
+                .unwrap()
+                .contains(&"feat".to_string())
+        );
+        assert!(config.body.as_ref().unwrap().regexes.is_some());
+        assert!(config.footer_value.as_ref().unwrap().regexes.is_some());
+    }
+
+    #[test]
+    fn test_unknown_preset() {
+        let custom_yaml = "
+preset: unsupported
+";
+        let result = Config::load_from_str(custom_yaml);
+        assert!(
+            matches!(result, Err(ConfigError::UnknownPreset(preset)) if preset == "unsupported")
+        );
+    }
+
+    #[test]
+    fn test_merge_configs() {
+        let base_yaml = "
+message:
+  max-line-length: 100
+type:
+  values:
+    - feat
+    - fix
+";
+        let override_yaml = "
+message:
+  max-length: 500
+type:
+  values:
+    - docs
+";
+        let base: Config = serde_yaml::from_str(base_yaml).unwrap();
+        let over: Config = serde_yaml::from_str(override_yaml).unwrap();
+
+        let merged = Config::merge(&base, &over);
+
+        let msg_rules = merged.message.unwrap();
+        assert_eq!(msg_rules.max_line_length, Some(100)); // inherited
+        assert_eq!(msg_rules.max_length, Some(500)); // overridden
+
+        let type_rules = merged.commit_type.unwrap();
+        assert_eq!(type_rules.values.unwrap(), vec!["docs"]); // overridden
+    }
+
+    #[test]
+    fn test_invalid_yaml() {
+        let invalid_yaml = "
+header:
+  max-length: not_a_number
+";
+        let result = Config::load_from_str(invalid_yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_unknown_field() {
+        let invalid_yaml = "
+header:
+  unknown: true
+";
+        let result = Config::load_from_str(invalid_yaml);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field `unknown`")
+        );
+    }
+
+    #[test]
+    fn test_invalid_regex() {
+        let invalid_yaml = r#"
+header:
+  regexes:
+    - "(unclosed"
+"#;
+        let result = Config::load_from_str(invalid_yaml);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("invalid regex"));
+    }
+
+    #[test]
+    fn test_load_default_path_if_missing_returns_empty_config() {
+        let config = Config::load_default_path_if_exists("definitely-missing-config.yaml").unwrap();
+        assert!(config.message.is_none());
+        assert!(config.header.is_none());
+        assert!(config.commit_type.is_none());
+    }
+
+    #[test]
+    fn test_load_from_path_requires_existing_file() {
+        let result = Config::load_from_path("definitely-missing-config.yaml");
+        assert!(matches!(result, Err(ConfigError::ReadFailed { .. })));
+    }
+}

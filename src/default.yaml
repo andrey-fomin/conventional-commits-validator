@@ -1,0 +1,20 @@
+description:
+  regexes:
+    # Description must not start with a space.
+    - '^[^ ].*'
+    # Description must not end with a space.
+    - '^.*[^ ]$'
+
+body:
+  regexes:
+    # Body must not start with a blank line.
+    - '(?s)^[^\n].*'
+    # Body must end with exactly one trailing newline.
+    - '(?s).*(?:[^\n])\n$'
+
+footer-value:
+  regexes:
+    # Footer value must not start with a blank line.
+    - '(?s)^[^\n].*'
+    # Footer value must end with exactly one trailing newline.
+    - '(?s).*(?:[^\n])\n$'

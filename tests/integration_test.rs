@@ -1,0 +1,150 @@
+use std::io::Write;
+use std::process::{Command, Stdio};
+
+fn binary_path() -> &'static str {
+    env!("CARGO_BIN_EXE_ccval")
+}
+
+fn run_with_stdin(args: &[&str], stdin: &str) -> (String, String, i32) {
+    let mut cmd = Command::new(binary_path());
+    cmd.args(args);
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn process");
+
+    {
+        let mut stdin_handle = child.stdin.take().expect("Failed to open stdin");
+        stdin_handle
+            .write_all(stdin.as_bytes())
+            .expect("Failed to write to stdin");
+    }
+
+    let output = child.wait_with_output().expect("Failed to read output");
+    (
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+        output.status.code().unwrap_or(-1),
+    )
+}
+
+fn run_with_file(args: &[&str], file_content: &str) -> (String, String, i32) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let unique_id = COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    let temp_file = std::env::temp_dir().join(format!("ccval_test_commit_{}.txt", unique_id));
+    std::fs::write(&temp_file, file_content).expect("Failed to write temp file");
+
+    let mut cmd = Command::new(binary_path());
+    cmd.args(args);
+    cmd.arg("--file");
+    cmd.arg(&temp_file);
+
+    let output = cmd.output().expect("Failed to execute process");
+    let _ = std::fs::remove_file(&temp_file);
+
+    (
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+        output.status.code().unwrap_or(-1),
+    )
+}
+
+#[test]
+fn valid_commit_exits_zero() {
+    let (_, _, code) = run_with_stdin(&[], "feat: add new feature\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn valid_commit_with_scope_exits_zero() {
+    let (_, _, code) = run_with_stdin(&[], "feat(api): add endpoint\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn valid_commit_with_body_exits_zero() {
+    let (_, _, code) = run_with_stdin(&[], "feat: add feature\n\nThis is the body.\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn invalid_type_exits_two_for_parse_error() {
+    let (_, stderr, code) = run_with_stdin(&[], "feat\n");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("Parsing error"));
+}
+
+#[test]
+fn missing_newline_exits_two() {
+    let (_, stderr, code) = run_with_stdin(&[], "feat: missing newline");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("newline"));
+}
+
+#[test]
+fn missing_colon_exits_two() {
+    let (_, stderr, code) = run_with_stdin(&[], "feat missing colon\n");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("colon"));
+}
+
+#[test]
+fn help_flag_exits_zero() {
+    let (stdout, _, code) = run_with_stdin(&["--help"], "");
+    assert_eq!(code, 0);
+    assert!(stdout.contains("Usage:"));
+}
+
+#[test]
+fn file_mode_valid_commit() {
+    let (_, _, code) = run_with_file(&[], "fix: bug fix\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn file_mode_invalid_commit() {
+    let (_, stderr, code) = run_with_file(&[], "invalid\n");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("Parsing error"));
+}
+
+#[test]
+fn custom_config_path() {
+    let config_content = "type:\n  values:\n    - custom\n";
+    let config_file = std::env::temp_dir().join("ccval_test_config.yaml");
+    std::fs::write(&config_file, config_content).expect("Failed to write config");
+
+    let (_, _, code_valid) = run_with_stdin(
+        &["-c", config_file.to_str().unwrap()],
+        "custom: valid type\n",
+    );
+    assert_eq!(code_valid, 0);
+
+    let (_, stderr, code_invalid) = run_with_stdin(
+        &["-c", config_file.to_str().unwrap()],
+        "feat: invalid type\n",
+    );
+    assert_eq!(code_invalid, 1);
+    assert!(stderr.contains("not in allowed values"));
+
+    let _ = std::fs::remove_file(&config_file);
+}
+
+#[test]
+fn stdin_is_default_mode() {
+    let (_, _, code1) = run_with_stdin(&[], "docs: update readme\n");
+    let (_, _, code2) = run_with_stdin(&[], "feat: new feature\n");
+    assert_eq!(code1, 0);
+    assert_eq!(code2, 0);
+}
+
+#[test]
+fn non_printable_char_rejected() {
+    let (_, stderr, code) = run_with_stdin(&[], "feat: tab\there\n");
+    assert_eq!(code, 2);
+    assert!(stderr.contains("Non-printable"));
+}

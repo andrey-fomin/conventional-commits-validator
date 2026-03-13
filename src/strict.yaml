@@ -1,0 +1,49 @@
+message:
+  max-line-length: 72
+
+header:
+  # Header max-length is 51, not 50, because the header value includes the trailing newline.
+  max-length: 51
+
+type:
+  values:
+    - feat
+    - fix
+    - docs
+    - style
+    - refactor
+    - perf
+    - test
+    - build
+    - ci
+    - chore
+    - revert
+
+scope:
+  regexes:
+    # Scope must use lowercase kebab-case.
+    - '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+
+description:
+  regexes:
+    # Description must not start with a space.
+    - '^[^ ].*'
+    # Description must not end with a space.
+    - '^.*[^ ]$'
+    # Description must not end with a period.
+    - '^.*[^.]$'
+
+body:
+  max-line-length: 72
+  regexes:
+    # Body must not start with a blank line.
+    - '(?s)^[^\n].*'
+    # Body must end with exactly one trailing newline.
+    - '(?s).*(?:[^\n])\n$'
+
+footer-value:
+  regexes:
+    # Footer value must not start with a blank line.
+    - '(?s)^[^\n].*'
+    # Footer value must end with exactly one trailing newline.
+    - '(?s).*(?:[^\n])\n$'
