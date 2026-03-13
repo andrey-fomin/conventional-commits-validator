@@ -36,9 +36,19 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  create-release:
+    name: Create release
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
   release:
     name: Release ${{ matrix.target }}
-    needs: verify
+    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -107,4 +117,3 @@ jobs:
             dist/*.tar.gz.sha256
             dist/*.zip
             dist/*.zip.sha256
-          generate_release_notes: true
