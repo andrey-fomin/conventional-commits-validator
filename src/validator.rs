@@ -202,4 +202,21 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(errors[0].contains("description does not match regex"));
     }
+
+    #[test]
+    fn test_validate_multiple_errors() {
+        let commit =
+            crate::parser::parse("bar: x\n\nthis body is way too long for the limit\n").unwrap();
+        let config = parse_config(
+            "type:\n  values:\n    - feat\n    - fix\nmessage:\n  max-line-length: 20\n",
+        );
+        let errors = validate(&commit, &config);
+        assert_eq!(
+            errors,
+            vec![
+                "message line length 39 is greater than 20",
+                "type \'bar\' is not in allowed values: [\"feat\", \"fix\"]"
+            ]
+        );
+    }
 }
