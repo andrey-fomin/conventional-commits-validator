@@ -1,55 +1,19 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
 
 permissions:
   contents: write
-  packages: write
 
 env:
   BIN_NAME: ccval
 
 jobs:
-  verify:
-    name: Verify
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Verify tag matches Cargo version
-        shell: bash
-        run: |
-          set -euo pipefail
-          tag_version="${GITHUB_REF_NAME#v}"
-          cargo_version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-          if [[ "$tag_version" != "$cargo_version" ]]; then
-            printf "Tag version %s does not match Cargo.toml version %s\n" "$tag_version" "$cargo_version" >&2
-            exit 1
-          fi
-
-      - name: Run tests
-        run: cargo test
-
-  create-release:
-    name: Create release
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-
-  release:
-    name: Release ${{ matrix.target }}
-    needs: create-release
+  build-artifacts:
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -61,6 +25,10 @@ jobs:
             binary_suffix: ""
           - os: windows-2022
             target: x86_64-pc-windows-msvc
+            archive_ext: zip
+            binary_suffix: ".exe"
+          - os: windows-2022
+            target: aarch64-pc-windows-msvc
             archive_ext: zip
             binary_suffix: ".exe"
           - os: ubuntu-latest
@@ -77,14 +45,12 @@ jobs:
             target: aarch64-unknown-linux-gnu
             archive_ext: tar.gz
             binary_suffix: ""
-          - os: windows-2022
-            target: aarch64-pc-windows-msvc
-            archive_ext: zip
-            binary_suffix: ".exe"
-
     steps:
-      - name: Check out repository
+      - name: Checkout release tag
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ github.event.release.tag_name }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -103,12 +69,14 @@ jobs:
 
       - name: Install cargo-zigbuild
         if: matrix.use_zigbuild
-        run: cargo install cargo-zigbuild
+        run: cargo install cargo-zigbuild --locked
 
       - name: Build release binary
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ matrix.use_zigbuild }}" = "true" ]; then
             cargo zigbuild --release --target ${{ matrix.target }}
           else
@@ -120,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME}"
+          version="${{ github.event.release.tag_name }}"
           package_dir="${BIN_NAME}-${version}-${{ matrix.target }}"
           mkdir -p "dist/${package_dir}"
           cp "target/${{ matrix.target }}/release/${BIN_NAME}${{ matrix.binary_suffix }}" "dist/${package_dir}/"
@@ -132,7 +100,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = "${{ github.event.release.tag_name }}"
           $packageDir = "${env:BIN_NAME}-$version-${{ matrix.target }}"
           New-Item -ItemType Directory -Force -Path "dist/$packageDir" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${env:BIN_NAME}${{ matrix.binary_suffix }}" "dist/$packageDir/"
@@ -141,22 +109,59 @@ jobs:
           $hash = (Get-FileHash "dist/$packageDir.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  $packageDir.zip" | Out-File -FilePath "dist/$packageDir.zip.sha256" -Encoding ascii
 
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v6
         with:
-          files: |
-            dist/*.tar.gz
-            dist/*.tar.gz.sha256
-            dist/*.zip
-            dist/*.zip.sha256
+          name: dist-${{ matrix.target }}
+          path: dist/
+
+  upload-release-artifacts:
+    name: Upload release artifacts
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: dist-*
+          path: .
+          merge-multiple: true
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name }}"
+          gh release upload "$TAG" dist/*.tar.gz dist/*.tar.gz.sha256 dist/*.zip dist/*.zip.sha256 --clobber
 
   docker-alpine:
     name: Docker (Alpine)
-    needs: create-release
+    needs: upload-release-artifacts
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Checkout release tag
         uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major=${VERSION%%.*}" >> "$GITHUB_OUTPUT"
+          echo "minor=$(printf '%s' "$VERSION" | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -170,17 +175,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract version
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "MAJOR=$MAJOR" >> $GITHUB_OUTPUT
-          echo "MINOR=$MINOR" >> $GITHUB_OUTPUT
-
-      - name: Build and push
+      - name: Build and push Alpine image
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -188,18 +183,31 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
+            andreyfomin/ccval:${{ steps.version.outputs.version }}
+            andreyfomin/ccval:${{ steps.version.outputs.major }}
+            andreyfomin/ccval:${{ steps.version.outputs.minor }}
             andreyfomin/ccval:latest
-            andreyfomin/ccval:${{ steps.version.outputs.MAJOR }}
-            andreyfomin/ccval:${{ steps.version.outputs.MAJOR }}.${{ steps.version.outputs.MINOR }}
-            andreyfomin/ccval:${{ steps.version.outputs.VERSION }}
 
   docker-distroless:
     name: Docker (Distroless)
-    needs: create-release
+    needs: upload-release-artifacts
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Checkout release tag
         uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major=${VERSION%%.*}" >> "$GITHUB_OUTPUT"
+          echo "minor=$(printf '%s' "$VERSION" | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -213,17 +221,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract version
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "MAJOR=$MAJOR" >> $GITHUB_OUTPUT
-          echo "MINOR=$MINOR" >> $GITHUB_OUTPUT
-
-      - name: Build and push
+      - name: Build and push Distroless image
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -231,7 +229,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
+            andreyfomin/ccval:${{ steps.version.outputs.version }}-distroless
+            andreyfomin/ccval:${{ steps.version.outputs.major }}-distroless
+            andreyfomin/ccval:${{ steps.version.outputs.minor }}-distroless
             andreyfomin/ccval:distroless
-            andreyfomin/ccval:${{ steps.version.outputs.MAJOR }}-distroless
-            andreyfomin/ccval:${{ steps.version.outputs.MAJOR }}.${{ steps.version.outputs.MINOR }}-distroless
-            andreyfomin/ccval:${{ steps.version.outputs.VERSION }}-distroless

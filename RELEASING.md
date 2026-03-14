@@ -1,33 +1,66 @@
 # Releasing
 
-## One-command release
+Releases are cut through an explicit release PR.
 
-Use the local release helper:
+## What the developer does
 
-```bash
-scripts/release 0.2.0
-```
+1. Merge regular pull requests into `main`.
+2. Wait for `release-plz` to open or update the release PR.
+3. Review the generated version bump and `CHANGELOG.md` in that release PR.
+4. Merge the release PR when you want to publish the next stable release.
+5. Watch the release workflows publish GitHub artifacts and Docker Hub images.
 
-The script will:
+The developer never edits the version by hand for a normal release.
 
-1. verify the git working tree is clean
-2. update `Cargo.toml` to the requested version
-3. create a release commit
-4. create a matching tag such as `v0.2.0`
-5. push the current branch and the tag to `origin`
+## What the system does
 
-## What happens next
+After every push to `main`, GitHub Actions runs `release-plz`.
 
-Pushing the tag triggers `.github/workflows/release.yml`, which:
+- It looks at commits since the last published release.
+- If there are unreleased changes, it creates or updates a single release PR.
+- In that release PR, it updates `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`.
+- When the release PR is merged, it creates the git tag and GitHub Release.
+- After the GitHub Release is published, GitHub Actions builds release archives and SHA256 checksum files for supported platforms.
+- Linux and macOS artifacts are built on Linux whenever possible, using cross-compilation for macOS and `aarch64-unknown-linux-gnu`.
+- Windows artifacts are built on Windows runners.
+- Docker images are then published to Docker Hub for that same release.
 
-1. verifies the tag version matches `Cargo.toml`
-2. runs tests
-3. builds release binaries for Linux, macOS, and Windows
-4. packages archives and SHA256 checksum files
-5. uploads them to the GitHub Release for the tag
+## How version bumps work
+
+The version is chosen by `release-plz` inside the release PR.
+
+- non-breaking commits such as `fix`, `docs`, `ci`, `chore`, `build`, `refactor`, and `test` normally produce a patch bump.
+- `feat` changes normally produce a minor bump.
+- breaking changes normally produce a major bump.
+- this repository sets `features_always_increment_minor = true`, so `feat` still bumps the minor version while the project is in `0.x`.
+
+The version is not finalized when a feature or fix PR is merged.
+It is finalized only when the release PR is merged.
+
+That means multiple merged PRs usually become one released version.
+
+Example:
+
+1. The latest release is `0.1.5`.
+2. A `fix` PR is merged into `main`.
+3. `release-plz` opens or updates a release PR and may propose `0.1.6`.
+4. Another `fix` PR is merged. The same release PR is updated and still usually stays `0.1.6`.
+5. A `feat` PR is merged before the release PR is merged. The same release PR is updated again and may now become `0.2.0`.
+6. When the release PR is merged, `0.2.0` is actually released.
+
+So a merged feature or fix does not immediately create a new released version. It only changes what the next release PR contains.
+
+## When a release PR is created
+
+`release-plz` checks every new commit merged into `main`.
+
+That means any merged change can update the pending release PR, including documentation and chore-only changes.
+
+`release-plz` only opens or updates the release PR when the changed files belong to the packaged project. In practice, for this repository, that means changes to shipped project files count, while unrelated repository-only files may not.
+
+Version bump rules are described in the "How version bumps work" section above.
 
 ## Notes
 
-- Pass the version without a leading `v`
-- The script fails if the worktree is dirty
-- The script fails if the target tag already exists
+- release PRs are created automatically and should not be edited by hand unless needed
+- crates.io publishing is intentionally disabled for now
