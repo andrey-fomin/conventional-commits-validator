@@ -1,0 +1,23 @@
+# Build stage
+FROM rust:bookworm AS builder
+
+RUN rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+
+ARG TARGETARCH
+RUN TARGET="" && \
+    case "$TARGETARCH" in \
+        amd64) TARGET="x86_64-unknown-linux-musl" ;; \
+        arm64) TARGET="aarch64-unknown-linux-musl" ;; \
+    esac && \
+    cargo build --release --target "$TARGET" && \
+    cp target/$TARGET/release/ccval /app/ccval
+
+# Runtime stage
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /app/ccval /ccval
+ENTRYPOINT ["/ccval"]

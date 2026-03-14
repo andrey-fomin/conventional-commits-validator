@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/andrey-fomin/conventional-commits-validator/actions/workflows/ci.yml/badge.svg)](https://github.com/andrey-fomin/conventional-commits-validator/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/andrey-fomin/conventional-commits-validator)](https://github.com/andrey-fomin/conventional-commits-validator/releases)
+[![Docker](https://img.shields.io/badge/docker-andreyfomin%2Fccval-blue)](https://hub.docker.com/r/andreyfomin/ccval)
 
 Validate commit messages using the Conventional Commits format with YAML configuration.
 
@@ -20,6 +21,29 @@ xattr -d com.apple.quarantine /path/to/ccval
 ```
 
 Alternatively, right-click the binary > Open > Open when prompted.
+
+### Docker
+
+Images are available on Docker Hub: `andreyfomin/ccval`
+
+| Tag | Base | Git Support | Size |
+|-----|------|-------------|------|
+| `:latest`, `:0.1.2` | Alpine | Yes | ~40 MB |
+| `:distroless`, `:0.1.2-distroless` | Distroless | No | ~10 MB |
+
+Use the `:distroless` variant for smaller images when only using stdin or file mode.
+
+**Validate stdin:**
+
+```bash
+printf 'feat: new feature\n' | docker run --rm -i andreyfomin/ccval
+```
+
+**Validate git commits (Alpine image only):**
+
+```bash
+docker run --rm -v $(pwd):/repo -w /repo andreyfomin/ccval -- -1
+```
 
 ## Usage
 
