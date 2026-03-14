@@ -3,6 +3,7 @@ name = "conventional-commits-validator"
 version = "0.1.5"
 edition = "2024"
 license = "Apache-2.0"
+repository = "https://github.com/andrey-fomin/conventional-commits-validator"
 
 [[bin]]
 name = "ccval"

@@ -1,0 +1,31 @@
+[workspace]
+changelog_update = true
+features_always_increment_minor = true
+git_only = true
+git_release_draft = false
+git_release_enable = true
+git_release_latest = true
+git_release_name = "v{{ version }}"
+git_release_type = "prod"
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+pr_name = "chore: release v{{ version }}"
+publish = false
+release_always = false
+semver_check = false
+
+[changelog]
+protect_breaking_commits = true
+sort_commits = "oldest"
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Changed" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^build", group = "Changed" },
+  { message = "^ci", group = "Changed" },
+  { message = "^test", group = "Changed" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^chore: release v", skip = true },
+  { message = "^chore", group = "Changed" },
+]
