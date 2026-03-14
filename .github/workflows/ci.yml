@@ -42,6 +42,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check single commit
+        run: |
+          set -euo pipefail
+          commit_count=$(git rev-list --count --no-merges ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          if [ "$commit_count" -ne 1 ]; then
+            echo "Error: PR must contain exactly one commit, but has $commit_count commits."
+            exit 1
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
