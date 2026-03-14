@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/andrey-fomin/conventional-commits-validator/compare/v0.1.6...v0.2.0) - 2026-03-14
+
+### Added
+
+- add explicit stdin mode, default to git
+- add -r/--repository flag
+
+### Changed
+
+- group build matrix entries by platform
+- add commit validation self-check
+- add test for multiple validation errors
+- enforce single-commit PRs
+- add Docker Hub metadata update job
+- skip validate step for bot-authored PRs
+
+### Fixed
+
+- add workflow_dispatch to enable manual release triggers
+- correct artifact upload path after download to current directory
+
 ## [0.1.6](https://github.com/andrey-fomin/conventional-commits-validator/compare/v0.1.5...v0.1.6) - 2026-03-14
 
 ### Changed
