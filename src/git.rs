@@ -64,6 +64,10 @@ fn parse_git_output(output: &str) -> Result<Vec<GitCommit>, GitError> {
             ));
         };
 
+        let message = message
+            .strip_suffix('\n')
+            .expect("Git %B output should end with newline");
+
         commits.push(GitCommit {
             id: id.to_string(),
             message: message.to_string(),
@@ -75,7 +79,7 @@ fn parse_git_output(output: &str) -> Result<Vec<GitCommit>, GitError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{GitCommit, GitError, parse_git_output};
+    use super::{parse_git_output, GitCommit, GitError};
 
     #[test]
     fn parse_git_output_empty() {
@@ -84,7 +88,7 @@ mod tests {
 
     #[test]
     fn parse_git_output_single_commit() {
-        let commits = parse_git_output("\u{001e}abc123\u{001f}feat: subject\n").unwrap();
+        let commits = parse_git_output("\u{001e}abc123\u{001f}feat: subject\n\n").unwrap();
         assert_eq!(
             commits,
             vec![GitCommit {
@@ -97,7 +101,7 @@ mod tests {
     #[test]
     fn parse_git_output_multiple_commits() {
         let commits = parse_git_output(
-            "\u{001e}abc123\u{001f}feat: subject\n\u{001e}def456\u{001f}fix: bug\n",
+            "\u{001e}abc123\u{001f}feat: subject\n\n\u{001e}def456\u{001f}fix: bug\n\n",
         )
         .unwrap();
         assert_eq!(commits.len(), 2);
