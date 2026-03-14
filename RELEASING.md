@@ -60,6 +60,45 @@ That means any merged change can update the pending release PR, including docume
 
 Version bump rules are described in the "How version bumps work" section above.
 
+## GitHub App Setup
+
+Release automation uses a GitHub App to create releases that can trigger downstream workflows.
+
+### One-time setup
+
+1. Run the setup script to create and configure the GitHub App:
+
+   ```bash
+   ./.github/setup-github-app.sh
+   ```
+
+2. Follow the prompts to:
+   - Create the GitHub App with appropriate permissions
+   - Install it on this repository
+   - Configure repository secrets and variables
+
+3. After setup, verify the configuration:
+
+   ```bash
+   gh variable list
+   gh secret list
+   ```
+
+   You should see `APP_ID` as a variable and `APP_PRIVATE_KEY` as a secret.
+
+### App permissions
+
+The GitHub App requires:
+- **Contents**: Read & write (for creating releases and tags)
+- **Pull requests**: Read & write (for creating release PRs)
+
+### How it works
+
+1. The `Release PR` workflow uses `actions/create-github-app-token` to generate a token
+2. This token is passed to `release-plz/action` which creates/updates release PRs and releases
+3. Because the token comes from a GitHub App (not `GITHUB_TOKEN`), the resulting release event triggers the `Release` workflow
+4. The `Release` workflow builds and publishes artifacts and Docker images
+
 ## Notes
 
 - release PRs are created automatically and should not be edited by hand unless needed
