@@ -6,6 +6,18 @@ Validate commit messages using the Conventional Commits format with YAML configu
 
 Download prebuilt binaries from [GitHub Releases](https://github.com/andrey-fomin/conventional-commits-validator/releases) for Linux, macOS, and Windows.
 
+### macOS
+
+On macOS, you may see a warning: "Apple could not verify 'ccval' is free of malware."
+
+To bypass Gatekeeper, run:
+
+```bash
+xattr -d com.apple.quarantine /path/to/ccval
+```
+
+Alternatively, right-click the binary > Open > Open when prompted.
+
 ## Usage
 
 ```bash
