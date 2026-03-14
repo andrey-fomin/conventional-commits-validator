@@ -266,3 +266,36 @@ jobs:
             andreyfomin/ccval:${{ steps.version.outputs.major }}-distroless
             andreyfomin/ccval:${{ steps.version.outputs.minor }}-distroless
             andreyfomin/ccval:distroless
+
+  docker-hub-metadata:
+    name: Update Docker Hub metadata
+    needs: [setup, docker-alpine, docker-distroless]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ needs.setup.outputs.tag }}
+
+      - name: Update Docker Hub repository
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          JSON_BODY=$(jq -n --arg user "$DOCKERHUB_USERNAME" --arg pass "$DOCKERHUB_TOKEN" \
+            '{"username": $user, "password": $pass}')
+          TOKEN=$(curl -sf -X POST "https://hub.docker.com/v2/users/login/" \
+            -H "Content-Type: application/json" \
+            -d "$JSON_BODY" | jq -r '.token')
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "Failed to obtain Docker Hub token"
+            exit 1
+          fi
+          README_CONTENT=$(jq -Rs '.' README.md)
+          curl -sf -X PATCH "https://hub.docker.com/v2/repositories/andreyfomin/ccval/" \
+            -H "Authorization: JWT ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"full_description\": ${README_CONTENT}, \"source\": \"https://github.com/andrey-fomin/conventional-commits-validator\"}"
