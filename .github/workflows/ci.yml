@@ -58,6 +58,7 @@ jobs:
         run: cargo build --release
 
       - name: Validate commits
+        if: github.event.pull_request.user.type != 'Bot'
         run: ./target/release/ccval -- ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} --no-merges
 
   cross-build:
