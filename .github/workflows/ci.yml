@@ -32,6 +32,25 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  commit-check:
+    name: Validate commits
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build ccval
+        run: cargo build --release
+
+      - name: Validate commits
+        run: ./target/release/ccval -- ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} --no-merges
+
   cross-build:
     name: Cross-build (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
