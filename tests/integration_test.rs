@@ -55,39 +55,39 @@ fn run_with_file(args: &[&str], file_content: &str) -> (String, String, i32) {
 
 #[test]
 fn valid_commit_exits_zero() {
-    let (_, _, code) = run_with_stdin(&[], "feat: add new feature\n");
+    let (_, _, code) = run_with_stdin(&["--stdin"], "feat: add new feature\n");
     assert_eq!(code, 0);
 }
 
 #[test]
 fn valid_commit_with_scope_exits_zero() {
-    let (_, _, code) = run_with_stdin(&[], "feat(api): add endpoint\n");
+    let (_, _, code) = run_with_stdin(&["--stdin"], "feat(api): add endpoint\n");
     assert_eq!(code, 0);
 }
 
 #[test]
 fn valid_commit_with_body_exits_zero() {
-    let (_, _, code) = run_with_stdin(&[], "feat: add feature\n\nThis is the body.\n");
+    let (_, _, code) = run_with_stdin(&["--stdin"], "feat: add feature\n\nThis is the body.\n");
     assert_eq!(code, 0);
 }
 
 #[test]
 fn invalid_type_exits_two_for_parse_error() {
-    let (_, stderr, code) = run_with_stdin(&[], "feat\n");
+    let (_, stderr, code) = run_with_stdin(&["--stdin"], "feat\n");
     assert_eq!(code, 2);
     assert!(stderr.contains("Parsing error"));
 }
 
 #[test]
 fn missing_newline_exits_two() {
-    let (_, stderr, code) = run_with_stdin(&[], "feat: missing newline");
+    let (_, stderr, code) = run_with_stdin(&["--stdin"], "feat: missing newline");
     assert_eq!(code, 2);
     assert!(stderr.contains("newline"));
 }
 
 #[test]
 fn missing_colon_exits_two() {
-    let (_, stderr, code) = run_with_stdin(&[], "feat missing colon\n");
+    let (_, stderr, code) = run_with_stdin(&["--stdin"], "feat missing colon\n");
     assert_eq!(code, 2);
     assert!(stderr.contains("colon"));
 }
@@ -119,13 +119,13 @@ fn custom_config_path() {
     std::fs::write(&config_file, config_content).expect("Failed to write config");
 
     let (_, _, code_valid) = run_with_stdin(
-        &["-c", config_file.to_str().unwrap()],
+        &["-c", config_file.to_str().unwrap(), "--stdin"],
         "custom: valid type\n",
     );
     assert_eq!(code_valid, 0);
 
     let (_, stderr, code_invalid) = run_with_stdin(
-        &["-c", config_file.to_str().unwrap()],
+        &["-c", config_file.to_str().unwrap(), "--stdin"],
         "feat: invalid type\n",
     );
     assert_eq!(code_invalid, 1);
@@ -135,16 +135,16 @@ fn custom_config_path() {
 }
 
 #[test]
-fn stdin_is_default_mode() {
-    let (_, _, code1) = run_with_stdin(&[], "docs: update readme\n");
-    let (_, _, code2) = run_with_stdin(&[], "feat: new feature\n");
+fn stdin_mode_explicit() {
+    let (_, _, code1) = run_with_stdin(&["--stdin"], "docs: update readme\n");
+    let (_, _, code2) = run_with_stdin(&["--stdin"], "feat: new feature\n");
     assert_eq!(code1, 0);
     assert_eq!(code2, 0);
 }
 
 #[test]
 fn non_printable_char_rejected() {
-    let (_, stderr, code) = run_with_stdin(&[], "feat: tab\there\n");
+    let (_, stderr, code) = run_with_stdin(&["--stdin"], "feat: tab\there\n");
     assert_eq!(code, 2);
     assert!(stderr.contains("Non-printable"));
 }

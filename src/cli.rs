@@ -1,4 +1,4 @@
-pub const HELP_TEXT: &str = "Usage: ccval [--config <path> | -c <path>] [--file <path> | -f <path>]\n       ccval [--config <path> | -c <path>] -- <git-args...>\n       ccval [--help | -h]\n\nReads a commit message from stdin, from a file, or validates commit messages selected by Git.\n\nOptions:\n  -c, --config <path>  Use a custom config file path\n  -f, --file <path>    Read a commit message from a file\n  -h, --help           Show this help message\n";
+pub const HELP_TEXT: &str = "Usage: ccval [-c <path>] [-- <git-log-args>...]\n       ccval [-c <path>] --stdin\n       ccval [-c <path>] -f <path>\n       ccval -h\n\nValidates commit messages from stdin, a file, or Git.\n\nModes:\n  (default)            Validate commit(s) from git log\n                       Use -- <git-log-args>... to pass arguments to git log\n                       Default: -1 (last commit)\n\n  --stdin              Read commit message from stdin\n  -f, --file <path>    Read commit message from a file\n  -h, --help           Show this help message\n\nOptions:\n  -c, --config <path>  Use a custom config file path\n\nExamples:\n  ccval                              # validate last commit\n  ccval -- origin/main..HEAD         # validate commits on branch\n  printf 'feat: msg\\n' | ccval --stdin\n  ccval --file .git/COMMIT_EDITMSG\n  ccval -c config.yaml --stdin\n";
 
 const HELP_HINT: &str = "Run with --help or -h for usage information.";
 
@@ -41,12 +41,19 @@ where
 
     let mut config_path = None;
     let mut file_path = None;
+    let mut stdin_mode = false;
     let mut show_help = false;
     let mut args = before_separator.into_iter();
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--help" | "-h" => show_help = true,
+            "--stdin" => {
+                if stdin_mode {
+                    return Err(format!("--stdin may be specified only once. {}", HELP_HINT));
+                }
+                stdin_mode = true;
+            }
             "--config" | "-c" => {
                 let Some(path) = args.next() else {
                     return Err(format!("missing value for {}. {}", arg, HELP_HINT));
@@ -76,13 +83,34 @@ where
     }
 
     if show_help {
-        if config_path.is_some() || file_path.is_some() || seen_separator {
+        if config_path.is_some() || file_path.is_some() || stdin_mode || seen_separator {
             return Err(format!(
                 "--help/-h must be used without other arguments. {}",
                 HELP_HINT
             ));
         }
         return Ok(CliAction::ShowHelp);
+    }
+
+    if stdin_mode && file_path.is_some() {
+        return Err(format!(
+            "--stdin cannot be combined with --file/-f. {}",
+            HELP_HINT
+        ));
+    }
+
+    if stdin_mode && seen_separator {
+        return Err(format!(
+            "--stdin cannot be combined with git arguments after --. {}",
+            HELP_HINT
+        ));
+    }
+
+    if file_path.is_some() && seen_separator {
+        return Err(format!(
+            "--file/-f cannot be combined with git arguments after --. {}",
+            HELP_HINT
+        ));
     }
 
     let input_mode = if seen_separator {
@@ -92,19 +120,17 @@ where
                 HELP_HINT
             ));
         }
-        if file_path.is_some() {
-            return Err(format!(
-                "--file/-f cannot be combined with git arguments after --. {}",
-                HELP_HINT
-            ));
-        }
         InputMode::Git {
             git_args: after_separator,
         }
     } else if let Some(path) = file_path {
         InputMode::File { path }
-    } else {
+    } else if stdin_mode {
         InputMode::Stdin
+    } else {
+        InputMode::Git {
+            git_args: vec!["-1".to_string()],
+        }
     };
 
     Ok(CliAction::Run(CliOptions {
@@ -128,7 +154,9 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: Some("custom.yaml".to_string()),
-                input_mode: InputMode::Stdin,
+                input_mode: InputMode::Git {
+                    git_args: vec!["-1".to_string()],
+                },
             })
         );
     }
@@ -140,7 +168,9 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: Some("custom.yaml".to_string()),
-                input_mode: InputMode::Stdin,
+                input_mode: InputMode::Git {
+                    git_args: vec!["-1".to_string()],
+                },
             })
         );
     }
@@ -162,8 +192,22 @@ mod tests {
     }
 
     #[test]
-    fn parse_stdin_mode() {
+    fn parse_default_git_mode() {
         let action = parse_from(&[]).unwrap();
+        assert_eq!(
+            action,
+            CliAction::Run(CliOptions {
+                config_path: None,
+                input_mode: InputMode::Git {
+                    git_args: vec!["-1".to_string()],
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn parse_stdin_mode() {
+        let action = parse_from(&["--stdin"]).unwrap();
         assert_eq!(
             action,
             CliAction::Run(CliOptions {
@@ -174,8 +218,47 @@ mod tests {
     }
 
     #[test]
-    fn parse_help_long_flag() {
-        assert_eq!(parse_from(&["--help"]).unwrap(), CliAction::ShowHelp);
+    fn parse_stdin_with_config() {
+        let action = parse_from(&["-c", "custom.yaml", "--stdin"]).unwrap();
+        assert_eq!(
+            action,
+            CliAction::Run(CliOptions {
+                config_path: Some("custom.yaml".to_string()),
+                input_mode: InputMode::Stdin,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_stdin_repeated_is_rejected() {
+        assert_eq!(
+            parse_from(&["--stdin", "--stdin"]).unwrap_err(),
+            "--stdin may be specified only once. Run with --help or -h for usage information.",
+        );
+    }
+
+    #[test]
+    fn parse_stdin_with_file_is_rejected() {
+        assert_eq!(
+            parse_from(&["--stdin", "--file", "msg.txt"]).unwrap_err(),
+            "--stdin cannot be combined with --file/-f. Run with --help or -h for usage information.",
+        );
+    }
+
+    #[test]
+    fn parse_stdin_with_git_args_is_rejected() {
+        assert_eq!(
+            parse_from(&["--stdin", "--", "HEAD"]).unwrap_err(),
+            "--stdin cannot be combined with git arguments after --. Run with --help or -h for usage information.",
+        );
+    }
+
+    #[test]
+    fn parse_help_with_stdin_is_rejected() {
+        assert_eq!(
+            parse_from(&["--help", "--stdin"]).unwrap_err(),
+            "--help/-h must be used without other arguments. Run with --help or -h for usage information.",
+        );
     }
 
     #[test]
