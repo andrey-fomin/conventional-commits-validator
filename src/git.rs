@@ -79,7 +79,7 @@ fn parse_git_output(output: &str) -> Result<Vec<GitCommit>, GitError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_git_output, GitCommit, GitError};
+    use super::{GitCommit, GitError, parse_git_output};
 
     #[test]
     fn parse_git_output_empty() {
