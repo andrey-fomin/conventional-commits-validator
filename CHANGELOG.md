@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/andrey-fomin/conventional-commits-validator/compare/v0.1.5...v0.1.6) - 2026-03-14
+
+### Changed
+
+- replace macOS runners with cargo-zigbuild for cross-compilation
+- rework release automation around release PRs
+
+### Documentation
+
+- update Docker image sizes in README
+
 ## [0.1.5] - 2026-03-14
 
 ### Changed
