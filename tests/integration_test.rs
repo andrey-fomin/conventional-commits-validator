@@ -148,3 +148,58 @@ fn non_printable_char_rejected() {
     assert_eq!(code, 2);
     assert!(stderr.contains("Non-printable"));
 }
+
+#[test]
+fn repository_flag_validates_from_alternate_repo() {
+    let temp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let temp_path = temp_dir.path();
+
+    let git_status = Command::new("git")
+        .args(["init"])
+        .current_dir(temp_path)
+        .status()
+        .expect("Failed to run git init");
+    assert!(git_status.success());
+
+    let config_status = Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(temp_path)
+        .status()
+        .expect("Failed to run git config");
+    assert!(config_status.success());
+
+    let config_status = Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(temp_path)
+        .status()
+        .expect("Failed to run git config");
+    assert!(config_status.success());
+
+    std::fs::write(temp_path.join("test.txt"), "test").expect("Failed to write file");
+
+    let add_status = Command::new("git")
+        .args(["add", "test.txt"])
+        .current_dir(temp_path)
+        .status()
+        .expect("Failed to run git add");
+    assert!(add_status.success());
+
+    let commit_status = Command::new("git")
+        .args([
+            "commit",
+            "--no-gpg-sign",
+            "--no-verify",
+            "-m",
+            "feat: test commit\n",
+        ])
+        .current_dir(temp_path)
+        .status()
+        .expect("Failed to run git commit");
+    assert!(commit_status.success());
+
+    let mut cmd = Command::new(binary_path());
+    cmd.arg("-r").arg(temp_path);
+    let output = cmd.output().expect("Failed to execute process");
+
+    assert_eq!(output.status.code(), Some(0));
+}

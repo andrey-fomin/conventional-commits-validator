@@ -22,20 +22,37 @@ pub enum GitError {
 }
 
 pub trait GitLoader {
-    fn load_commits(&self, args: &[String]) -> Result<Vec<GitCommit>, GitError>;
+    fn load_commits(
+        &self,
+        args: &[String],
+        repository_path: Option<&str>,
+    ) -> Result<Vec<GitCommit>, GitError>;
 }
 
 pub struct GitSubprocess;
 
 impl GitLoader for GitSubprocess {
-    fn load_commits(&self, args: &[String]) -> Result<Vec<GitCommit>, GitError> {
-        load_commits(args)
+    fn load_commits(
+        &self,
+        args: &[String],
+        repository_path: Option<&str>,
+    ) -> Result<Vec<GitCommit>, GitError> {
+        load_commits(args, repository_path)
     }
 }
 
-fn load_commits(git_args: &[String]) -> Result<Vec<GitCommit>, GitError> {
+fn load_commits(
+    git_args: &[String],
+    repository_path: Option<&str>,
+) -> Result<Vec<GitCommit>, GitError> {
     let format = "%x1e%H%x1f%B";
-    let output = Command::new("git")
+    let mut cmd = Command::new("git");
+
+    if let Some(path) = repository_path {
+        cmd.args(["-C", path]);
+    }
+
+    let output = cmd
         .arg("log")
         .args(git_args)
         .arg(format!("--format={format}"))

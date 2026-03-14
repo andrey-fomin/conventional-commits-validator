@@ -1,4 +1,4 @@
-pub const HELP_TEXT: &str = "Usage: ccval [-c <path>] [-- <git-log-args>...]\n       ccval [-c <path>] --stdin\n       ccval [-c <path>] -f <path>\n       ccval -h\n\nValidates commit messages from stdin, a file, or Git.\n\nModes:\n  (default)            Validate commit(s) from git log\n                       Use -- <git-log-args>... to pass arguments to git log\n                       Default: -1 (last commit)\n\n  --stdin              Read commit message from stdin\n  -f, --file <path>    Read commit message from a file\n  -h, --help           Show this help message\n\nOptions:\n  -c, --config <path>  Use a custom config file path\n\nExamples:\n  ccval                              # validate last commit\n  ccval -- origin/main..HEAD         # validate commits on branch\n  printf 'feat: msg\\n' | ccval --stdin\n  ccval --file .git/COMMIT_EDITMSG\n  ccval -c config.yaml --stdin\n";
+pub const HELP_TEXT: &str = "Usage: ccval [-c <path>] [-r <path>] [-- <git-log-args>...]\n       ccval [-c <path>] --stdin\n       ccval [-c <path>] -f <path>\n       ccval -h\n\nValidates commit messages from stdin, a file, or Git.\n\nModes:\n  (default)            Validate commit(s) from git log\n                       Use -- <git-log-args>... to pass arguments to git log\n                       Default: -1 (last commit)\n\n  --stdin              Read commit message from stdin\n  -f, --file <path>    Read commit message from a file\n  -h, --help           Show this help message\n\nOptions:\n  -c, --config <path>  Use a custom config file path\n  -r, --repository <path>\n                       Path to Git repository working tree\n                       Cannot be used with --stdin or --file\n\nExamples:\n  ccval                              # validate last commit\n  ccval -- origin/main..HEAD         # validate commits on branch\n  ccval -r /path/to/repo             # validate last commit in specific repo\n  printf 'feat: msg\\n' | ccval --stdin\n  ccval --file .git/COMMIT_EDITMSG\n  ccval -c config.yaml --stdin\n";
 
 const HELP_HINT: &str = "Run with --help or -h for usage information.";
 
@@ -12,6 +12,7 @@ pub enum InputMode {
 #[derive(Debug, PartialEq)]
 pub struct CliOptions {
     pub config_path: Option<String>,
+    pub repository_path: Option<String>,
     pub input_mode: InputMode,
 }
 
@@ -40,6 +41,7 @@ where
     }
 
     let mut config_path = None;
+    let mut repository_path = None;
     let mut file_path = None;
     let mut stdin_mode = false;
     let mut show_help = false;
@@ -66,6 +68,18 @@ where
                 }
                 config_path = Some(path);
             }
+            "--repository" | "-r" => {
+                let Some(path) = args.next() else {
+                    return Err(format!("missing value for {}. {}", arg, HELP_HINT));
+                };
+                if repository_path.is_some() {
+                    return Err(format!(
+                        "--repository/-r may be specified only once. {}",
+                        HELP_HINT
+                    ));
+                }
+                repository_path = Some(path);
+            }
             "--file" | "-f" => {
                 let Some(path) = args.next() else {
                     return Err(format!("missing value for {}. {}", arg, HELP_HINT));
@@ -83,7 +97,12 @@ where
     }
 
     if show_help {
-        if config_path.is_some() || file_path.is_some() || stdin_mode || seen_separator {
+        if config_path.is_some()
+            || repository_path.is_some()
+            || file_path.is_some()
+            || stdin_mode
+            || seen_separator
+        {
             return Err(format!(
                 "--help/-h must be used without other arguments. {}",
                 HELP_HINT
@@ -95,6 +114,20 @@ where
     if stdin_mode && file_path.is_some() {
         return Err(format!(
             "--stdin cannot be combined with --file/-f. {}",
+            HELP_HINT
+        ));
+    }
+
+    if stdin_mode && repository_path.is_some() {
+        return Err(format!(
+            "--repository/-r cannot be used with --stdin. {}",
+            HELP_HINT
+        ));
+    }
+
+    if file_path.is_some() && repository_path.is_some() {
+        return Err(format!(
+            "--repository/-r cannot be used with --file/-f. {}",
             HELP_HINT
         ));
     }
@@ -135,6 +168,7 @@ where
 
     Ok(CliAction::Run(CliOptions {
         config_path,
+        repository_path,
         input_mode,
     }))
 }
@@ -154,6 +188,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: Some("custom.yaml".to_string()),
+                repository_path: None,
                 input_mode: InputMode::Git {
                     git_args: vec!["-1".to_string()],
                 },
@@ -168,6 +203,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: Some("custom.yaml".to_string()),
+                repository_path: None,
                 input_mode: InputMode::Git {
                     git_args: vec!["-1".to_string()],
                 },
@@ -198,6 +234,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: None,
+                repository_path: None,
                 input_mode: InputMode::Git {
                     git_args: vec!["-1".to_string()],
                 },
@@ -212,6 +249,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: None,
+                repository_path: None,
                 input_mode: InputMode::Stdin,
             })
         );
@@ -224,6 +262,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: Some("custom.yaml".to_string()),
+                repository_path: None,
                 input_mode: InputMode::Stdin,
             })
         );
@@ -281,6 +320,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: None,
+                repository_path: None,
                 input_mode: InputMode::File {
                     path: "COMMIT_EDITMSG".to_string(),
                 },
@@ -295,6 +335,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: None,
+                repository_path: None,
                 input_mode: InputMode::File {
                     path: "COMMIT_EDITMSG".to_string(),
                 },
@@ -333,6 +374,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: None,
+                repository_path: None,
                 input_mode: InputMode::Git {
                     git_args: vec!["HEAD".to_string()],
                 },
@@ -348,6 +390,7 @@ mod tests {
             action,
             CliAction::Run(CliOptions {
                 config_path: Some("custom.yaml".to_string()),
+                repository_path: None,
                 input_mode: InputMode::Git {
                     git_args: vec!["master..HEAD".to_string(), "--no-merges".to_string()],
                 },
@@ -376,6 +419,98 @@ mod tests {
         assert_eq!(
             parse_from(&["--file", "COMMIT_EDITMSG", "--", "HEAD"]).unwrap_err(),
             "--file/-f cannot be combined with git arguments after --. Run with --help or -h for usage information.",
+        );
+    }
+
+    #[test]
+    fn parse_repository_long_flag() {
+        let action = parse_from(&["--repository", "/path/to/repo"]).unwrap();
+        assert_eq!(
+            action,
+            CliAction::Run(CliOptions {
+                config_path: None,
+                repository_path: Some("/path/to/repo".to_string()),
+                input_mode: InputMode::Git {
+                    git_args: vec!["-1".to_string()],
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn parse_repository_short_flag() {
+        let action = parse_from(&["-r", "/path/to/repo"]).unwrap();
+        assert_eq!(
+            action,
+            CliAction::Run(CliOptions {
+                config_path: None,
+                repository_path: Some("/path/to/repo".to_string()),
+                input_mode: InputMode::Git {
+                    git_args: vec!["-1".to_string()],
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn parse_repository_with_git_args() {
+        let action = parse_from(&["-r", "/path/to/repo", "--", "HEAD~5..HEAD"]).unwrap();
+        assert_eq!(
+            action,
+            CliAction::Run(CliOptions {
+                config_path: None,
+                repository_path: Some("/path/to/repo".to_string()),
+                input_mode: InputMode::Git {
+                    git_args: vec!["HEAD~5..HEAD".to_string()],
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn parse_repository_with_config() {
+        let action = parse_from(&["-c", "config.yaml", "-r", "/repo"]).unwrap();
+        assert_eq!(
+            action,
+            CliAction::Run(CliOptions {
+                config_path: Some("config.yaml".to_string()),
+                repository_path: Some("/repo".to_string()),
+                input_mode: InputMode::Git {
+                    git_args: vec!["-1".to_string()],
+                },
+            })
+        );
+    }
+
+    #[test]
+    fn parse_repository_missing_value() {
+        assert_eq!(
+            parse_from(&["--repository"]).unwrap_err(),
+            "missing value for --repository. Run with --help or -h for usage information."
+        );
+    }
+
+    #[test]
+    fn parse_repository_repeated_is_rejected() {
+        assert_eq!(
+            parse_from(&["-r", "a", "-r", "b"]).unwrap_err(),
+            "--repository/-r may be specified only once. Run with --help or -h for usage information.",
+        );
+    }
+
+    #[test]
+    fn parse_repository_with_stdin_is_rejected() {
+        assert_eq!(
+            parse_from(&["-r", "/repo", "--stdin"]).unwrap_err(),
+            "--repository/-r cannot be used with --stdin. Run with --help or -h for usage information.",
+        );
+    }
+
+    #[test]
+    fn parse_repository_with_file_is_rejected() {
+        assert_eq!(
+            parse_from(&["-r", "/repo", "--file", "msg.txt"]).unwrap_err(),
+            "--repository/-r cannot be used with --file/-f. Run with --help or -h for usage information.",
         );
     }
 }
