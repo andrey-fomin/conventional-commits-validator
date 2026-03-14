@@ -48,7 +48,7 @@ docker run --rm -v $(pwd):/repo -w /repo andreyfomin/ccval
 ## Usage
 
 ```
-Usage: ccval [-c <path>] [-- <git-log-args>...]
+Usage: ccval [-c <path>] [-r <path>] [-- <git-log-args>...]
        ccval [-c <path>] --stdin
        ccval [-c <path>] -f <path>
        ccval -h
@@ -66,10 +66,14 @@ Modes:
 
 Options:
   -c, --config <path>  Use a custom config file path
+  -r, --repository <path>
+                       Path to Git repository working tree
+                       (incompatible with --stdin and --file)
 
 Examples:
   ccval                              # validate last commit
   ccval -- origin/main..HEAD         # validate commits on branch
+  ccval -r /path/to/repo             # validate last commit in specific repo
   printf 'feat: msg\n' | ccval --stdin
   ccval --file .git/COMMIT_EDITMSG
   ccval -c config.yaml --stdin
@@ -92,6 +96,8 @@ Examples:
 ```bash
 ccval                              # validate last commit
 ccval -- origin/main..HEAD         # validate commits on branch
+ccval -r /path/to/repo             # validate last commit in specific repo
+ccval -r . -c config.yaml          # use custom config
 printf 'feat: msg\n' | ccval --stdin
 ccval --file .git/COMMIT_EDITMSG
 ccval -c config.yaml --stdin

@@ -19,7 +19,11 @@ pub enum AppError {
 
 pub fn run(options: CliOptions, git_loader: &dyn GitLoader) -> Result<RunOutcome, AppError> {
     let config = load_config(options.config_path.as_deref()).map_err(AppError::Config)?;
-    let inputs = load_inputs(options.input_mode, git_loader)?;
+    let inputs = load_inputs(
+        options.input_mode,
+        git_loader,
+        options.repository_path.as_deref(),
+    )?;
 
     let mut parse_failed = false;
     let mut validation_failed = false;
@@ -70,6 +74,7 @@ fn load_config(config_path: Option<&str>) -> Result<Config, ConfigError> {
 fn load_inputs(
     input_mode: InputMode,
     git_loader: &dyn GitLoader,
+    repository_path: Option<&str>,
 ) -> Result<Vec<CommitInput>, AppError> {
     match input_mode {
         InputMode::Stdin => Ok(vec![CommitInput {
@@ -87,7 +92,7 @@ fn load_inputs(
             }])
         }
         InputMode::Git { git_args } => Ok(git_loader
-            .load_commits(&git_args)
+            .load_commits(&git_args, repository_path)
             .map_err(AppError::Git)?
             .into_iter()
             .map(|commit| CommitInput {
@@ -117,7 +122,11 @@ mod tests {
     }
 
     impl GitLoader for MockGitLoader {
-        fn load_commits(&self, _args: &[String]) -> Result<Vec<GitCommit>, GitError> {
+        fn load_commits(
+            &self,
+            _args: &[String],
+            _repository_path: Option<&str>,
+        ) -> Result<Vec<GitCommit>, GitError> {
             if let Some(ref err) = self.error {
                 return Err(GitError::GitFailed {
                     code: match err {
@@ -138,6 +147,7 @@ mod tests {
     fn make_options(input_mode: InputMode) -> CliOptions {
         CliOptions {
             config_path: None,
+            repository_path: None,
             input_mode,
         }
     }
@@ -205,6 +215,7 @@ mod tests {
         };
         let options = CliOptions {
             config_path: Some(config_path),
+            repository_path: None,
             input_mode: InputMode::Git {
                 git_args: vec!["HEAD".to_string()],
             },
