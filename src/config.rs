@@ -37,12 +37,12 @@ pub struct FieldRules {
     pub required: Option<bool>,
     pub forbidden: Option<bool>,
     #[serde(with = "regexes_serde", default)]
-    pub regexes: Option<Vec<regex::Regex>>,
+    pub regexes: Option<Vec<regex_lite::Regex>>,
     pub values: Option<Vec<String>>,
 }
 
 mod regexes_serde {
-    use regex::Regex;
+    use regex_lite::Regex;
     use serde::{self, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(regexes: &Option<Vec<Regex>>, serializer: S) -> Result<S::Ok, S::Error>
@@ -235,16 +235,14 @@ mod tests {
         assert_eq!(config.header.as_ref().unwrap().max_length, Some(51));
         assert_eq!(config.body.as_ref().unwrap().max_line_length, Some(72));
         assert!(config.scope.as_ref().unwrap().regexes.is_some());
-        assert!(
-            config
-                .commit_type
-                .as_ref()
-                .unwrap()
-                .values
-                .as_ref()
-                .unwrap()
-                .contains(&"feat".to_string())
-        );
+        assert!(config
+            .commit_type
+            .as_ref()
+            .unwrap()
+            .values
+            .as_ref()
+            .unwrap()
+            .contains(&"feat".to_string()));
         assert!(config.body.as_ref().unwrap().regexes.is_some());
         assert!(config.footer_value.as_ref().unwrap().regexes.is_some());
     }
@@ -293,16 +291,14 @@ preset: strict
         assert_eq!(config.header.as_ref().unwrap().max_length, Some(51));
         assert_eq!(config.body.as_ref().unwrap().max_line_length, Some(72));
         assert!(config.scope.as_ref().unwrap().regexes.is_some());
-        assert!(
-            config
-                .commit_type
-                .as_ref()
-                .unwrap()
-                .values
-                .as_ref()
-                .unwrap()
-                .contains(&"feat".to_string())
-        );
+        assert!(config
+            .commit_type
+            .as_ref()
+            .unwrap()
+            .values
+            .as_ref()
+            .unwrap()
+            .contains(&"feat".to_string()));
         assert!(config.body.as_ref().unwrap().regexes.is_some());
         assert!(config.footer_value.as_ref().unwrap().regexes.is_some());
     }
@@ -366,12 +362,10 @@ header:
 ";
         let result = Config::load_from_str(invalid_yaml);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("unknown field `unknown`")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field `unknown`"));
     }
 
     #[test]

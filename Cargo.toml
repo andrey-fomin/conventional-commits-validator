@@ -9,7 +9,7 @@ name = "ccval"
 path = "src/main.rs"
 
 [dependencies]
-regex = "1.12.3"
+regex-lite = "0.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 thiserror = "2.0.18"
