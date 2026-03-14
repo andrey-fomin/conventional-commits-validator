@@ -28,8 +28,8 @@ Images are available on Docker Hub: `andreyfomin/ccval`
 
 | Tag | Base | Git Support | Size |
 |-----|------|-------------|------|
-| `:latest`, `:0.1.2` | Alpine | Yes | ~40 MB |
-| `:distroless`, `:0.1.2-distroless` | Distroless | No | ~10 MB |
+| `:latest` | Alpine | Yes | ~11 MB |
+| `:distroless` | Distroless | No | ~1 MB |
 
 Use the `:distroless` variant for smaller images when only using stdin or file mode.
 
