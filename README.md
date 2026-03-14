@@ -36,37 +36,44 @@ Use the `:distroless` variant for smaller images when only using stdin or file m
 **Validate stdin:**
 
 ```bash
-printf 'feat: new feature\n' | docker run --rm -i andreyfomin/ccval
+printf 'feat: new feature\n' | docker run --rm -i andreyfomin/ccval --stdin
 ```
 
 **Validate git commits (Alpine image only):**
 
 ```bash
-docker run --rm -v $(pwd):/repo -w /repo andreyfomin/ccval -- -1
+docker run --rm -v $(pwd):/repo -w /repo andreyfomin/ccval
 ```
 
 ## Usage
 
-```bash
-ccval [options]
 ```
+Usage: ccval [-c <path>] [-- <git-log-args>...]
+       ccval [-c <path>] --stdin
+       ccval [-c <path>] -f <path>
+       ccval -h
 
-### Input Modes
+Validates commit messages from stdin, a file, or Git.
 
-| Mode | Example |
-|------|---------|
-| stdin (default) | `printf 'feat: new feature\n' \| ccval` |
-| file | `ccval --file .git/COMMIT_EDITMSG` |
-| git | `ccval -- HEAD` (arguments after `--` passed to `git log`) |
+Modes:
+  (default)            Validate commit(s) from git log
+                       Use -- <git-log-args>... to pass arguments to git log
+                       Default: -1 (last commit)
 
-### Options
+  --stdin              Read commit message from stdin
+  -f, --file <path>    Read commit message from a file
+  -h, --help           Show this help message
 
-| Option | Description |
-|--------|-------------|
-| `-c, --config <path>` | Custom config file path |
-| `-f, --file <path>` | Read commit message from file |
-| `-h, --help` | Show help |
-| `-- <args>` | Pass arguments to `git log` (e.g., `HEAD`, `main..HEAD --no-merges`) |
+Options:
+  -c, --config <path>  Use a custom config file path
+
+Examples:
+  ccval                              # validate last commit
+  ccval -- origin/main..HEAD         # validate commits on branch
+  printf 'feat: msg\n' | ccval --stdin
+  ccval --file .git/COMMIT_EDITMSG
+  ccval -c config.yaml --stdin
+```
 
 ### Exit Codes
 
@@ -82,40 +89,12 @@ ccval [options]
 
 ## Examples
 
-Validate stdin:
-
 ```bash
-printf 'feat(api): add login endpoint\n' | ccval
-```
-
-Validate the last commit:
-
-```bash
-ccval -- -1
-```
-
-Validate a commit message file (Git hook):
-
-```bash
+ccval                              # validate last commit
+ccval -- origin/main..HEAD         # validate commits on branch
+printf 'feat: msg\n' | ccval --stdin
 ccval --file .git/COMMIT_EDITMSG
-```
-
-Validate all commits on a branch (excluding merges):
-
-```bash
-ccval -- origin/main..HEAD --no-merges
-```
-
-Use a custom config:
-
-```bash
-ccval -c conventional-commits.yaml --file .git/COMMIT_EDITMSG
-```
-
-Exclude bot commits in CI:
-
-```bash
-ccval -- --no-merges --invert-grep --grep 'dependabot' origin/main..HEAD
+ccval -c config.yaml --stdin
 ```
 
 ## Configuration
