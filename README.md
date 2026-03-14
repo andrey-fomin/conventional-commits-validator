@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/andrey-fomin/conventional-commits-validator/actions/workflows/ci.yml/badge.svg)](https://github.com/andrey-fomin/conventional-commits-validator/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/andrey-fomin/conventional-commits-validator)](https://github.com/andrey-fomin/conventional-commits-validator/releases)
-[![License](https://img.shields.io/github/license/andrey-fomin/conventional-commits-validator)](LICENSE)
 
 Validate commit messages using the Conventional Commits format with YAML configuration.
 
